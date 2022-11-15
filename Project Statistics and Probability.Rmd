@@ -1,0 +1,991 @@
+---
+title: "Project Fundations of Statistics and Probability"
+author: "Pasquale Formicola & Angelo Giuseppe Limone"
+date: "2022-11-05"
+output:
+  html_document:
+    toc: true
+    number_sections: true
+    code_folding: hide
+---
+
+# Introduction
+
+In the US the majority of people have **Private Health Insurance**, usually obtained through a current employer, and the minority are covered through government sponsored programmes.The insurer calculates premiums for their insurance policies relying on two primary factors - the cost the insurer predicts to pay under their policies, and the cost of operating particular policies or plans. The cost of medical expenses are calculated in many ways - the policyholder's health status, region of residence, employment status, and wages can all be included in the estimate.
+
+In terms of statistical methods, **Regression Analysis** is often used to estimate healthcare costs and calculate insurance premiums. A policyholder's medical expenses can be influenced by a myriad of factors, such as their habits, chronic illnesses, age, economic factors, occupational hazards, place of residence, and so on. Regression analysis can be used to identify the factors that are significant in their influence on medical costs. Regression analysis can also be used to predict the true cost of an insurance policy, allowing for insurance companies to set competitive prices. Setting the same price for all policyholders is not a competitive strategy as those with low expenses would overpay and possibly leave the service, and those with high expenses would remain using the service and make a loss of the insurance company. Regression models are tools that can be used to establish proper **Classification Systems** that offer a fair price to customers and maximise the company's profits.
+
+# Dataset
+
+The dataset for this report comes from the book **Machine Learning with R** by **Brett Lantz** and is in the public domain. The dataset includes information about the insurance policy holder, their dependents, and their medical expenses throughout a year.
+
+* **Age**: Age of primary policyholder.
+* **Sex**: Sex of the policy policyholder.
+* **BMI**: Body Mass Index of policyholder, defined as the body mass divided by the square of the body height (kg/m2).
+* **Smoker Status**: Whether the policyholder is a smoker or a non-smoker.
+* **Children**: Number of children/dependents covered in the policy.
+* **Region of Residence**: Residential areas of the policy holder (in the US) - North East, South East, South West, North West.
+* **Charges**: Yearly medical expenses billed by the medical insurance provider ($).
+
+
+# Purposes
+
+* To determine if there is a **Relationship between Attributes and Medical Costs**.
+* To determine if there a **Significant Difference in Medical Costs** between different groups.
+* To fit a **Linear Regression Model** to predict costs.
+
+# Initial Setup
+
+**Libraries and Functions** used to facilitate workflow.
+
+```{r setup, message=FALSE}
+suppressMessages(library(tidyverse))        # data manipulation and plots
+suppressMessages(library(funModeling))      # overview stats
+library(magrittr)               # to use pipes
+library(skimr)                  # to get a quick summary table
+library(caret)                  # to create the partition for training/test datasets
+library(funModeling)
+library(tidyverse)
+library(corrplot)
+
+options(scipen = 999)                              # turn off scientific notation for numbers
+options(repr.plot.width=12, repr.plot.height=8)    # set universal plot size
+```
+
+Loading **Dataset**.
+
+```{r df, message=FALSE}
+df <- read_csv("~/Desktop/Statistics and Probability/insurance.csv")
+df
+```
+
+Denote **Factor** Variables.
+
+```{r wk1}
+df$sex <- factor(df$sex)
+df$smoker <- factor(df$smoker)
+df$region <- factor(df$region)
+df$children <- factor(df$children)
+```
+
+Check for **Missing Values**.
+
+```{r}
+# check for missing values
+df %>%
+    is.na() %>%
+    sum()
+```
+
+## Primary Informations 
+
+```{r}
+skim(df)
+```
+
+### Findings
+
+There are three **Continuous Variables**:
+
+* **Age**
+* **BMI**
+* **Charges**
+
+And one **Discrete Variable**:
+
+* **Dependents**
+
+There are three **Categorical Variables**:
+
+***Sex**
+***Smoker**
+***Region**
+
+*No missing values* Detected.
+
+# Exploratory Data Analysis (EDA)
+
+### General Overview
+
+```{r}
+figsize <- options(repr.plot.width=6, repr.plot.height=6) # set plot size for this plot 
+
+# Smoker count plot
+smoker <- df %>%
+    ggplot(aes(x=smoker, fill=smoker)) +
+    geom_bar(show.legend = FALSE) +
+    # add percentages on top of bars
+    geom_text(
+        stat='count',
+        aes(label=paste0(round(after_stat(prop*100), digits=1), "%"),group=1),
+        vjust=-0.4,
+        size=2
+    ) +
+    # add labels
+    labs(
+        x = "",
+        y = "",
+        title = "Number of policyholders by smoking"
+    ) +
+    # rename x-ticks
+    scale_x_discrete(
+        labels = c("no" = "Non-smoker", "yes" = "Smoker")
+    ) +
+    # adjust y-ticks
+    scale_y_continuous(
+        breaks=seq(0,2000,100)
+    ) +
+    # resize text
+    theme(
+        plot.title = element_text(size=8),
+        axis.text.x = element_text(size=7),
+        axis.text.y = element_text(size=7)
+    )
+
+# Region count plot
+region <- df %>%
+    ggplot(aes(x=forcats::fct_infreq(region), fill=region)) +
+    geom_bar(show.legend = FALSE) +
+    # add percentages on top of bars
+    geom_text(
+        stat='count',
+        aes(label = paste0(round(after_stat(prop*100), digits=1), "%"), group=1),
+        vjust=-0.4,
+        size=2
+    ) +
+    # add labels
+    labs(
+        x = "",
+        y = "",
+        title = "Number of policyholders by region"
+    ) +
+    # rename x-ticks
+    scale_x_discrete(
+        labels = c("northeast" = "North East", "northwest" = "North West",
+                   "southeast" = "South East", "southwest" = "South West")
+    ) +
+    # adjust ticks
+    scale_y_continuous(
+        breaks=seq(0,350,50)
+    ) +
+    # resize text
+    theme(
+        plot.title = element_text(size=8),
+        axis.text.x = element_text(size=7),
+        axis.text.y = element_text(size=7)
+    )
+
+# Sex count plot
+sex <- df %>%
+    ggplot(aes(x=forcats::fct_infreq(sex), fill=sex)) +
+    geom_bar(show.legend = FALSE) +
+    # add percentages on top of bars
+    geom_text(
+        stat='count',
+        aes(
+            label=paste0(round(after_stat(prop*100), digits=1), "%"), group=1),
+        vjust=-0.4,
+        size=2
+    ) +
+    # add labels
+    labs(
+        x = "",
+        y = "",
+        title = "Number of policyholders by sex",
+        fill = "Sex"
+    ) +
+    # rename x-ticks
+    scale_x_discrete(
+        labels = c("male" = "Male", "female" = "Female")
+    ) +
+    # adjust y-ticks
+    scale_y_continuous(
+        breaks=seq(0,700,100)
+    ) +
+    # resize text
+    theme(
+        plot.title = element_text(size=8),
+        axis.text.x = element_text(size=7),
+        axis.text.y = element_text(size=7)
+    )
+
+# Children count plot
+children <- df %>%
+    ggplot(aes(x=forcats::fct_infreq(children), fill=children)) +
+    geom_bar(show.legend = FALSE) +
+    # add percentages
+    geom_text(
+        stat='count',
+        aes(label=paste0(round(after_stat(prop*100), digits=1), "%"), group=1),
+        vjust=-0.4,
+        size=2
+    ) +
+    # add labels
+    labs(
+        x = "",
+        y = "",
+        title = "Number of dependents per policy"
+    ) +
+    # rename x-ticks
+    scale_x_discrete(
+        labels = c("0" = "None")
+    ) +
+    # adjust y-ticks
+    scale_y_continuous(
+        breaks=seq(0,600,50)
+    ) +
+    # resize text
+    theme(
+        plot.title = element_text(size=8),
+        axis.text.x = element_text(size=7),
+        axis.text.y = element_text(size=7)
+    )
+
+# Plot grid
+cowplot::plot_grid(
+  smoker, region, sex, children,
+  labels="AUTO",
+  ncol = 2,
+  nrow = 2
+    )
+
+```
+
+### Summary
+
+* **Smoking status:** There are many more non-smokers (**80%**) than smokers (**20%**).
+
+* **Region of residence:** Policyholders are evenly distributed across regions with South East being the most populous one (**27%**) with the rest of regions containing around 24% of policyholders each.
+
+* **Sex:** There are slightly more men (**51%**) than there are women (**49%**) in the sample.
+
+* **Dependents:** Most policyholders (**43%**) do not have dependents covered in their policy. For those who do have dependents covered in their policy, most have one dependent (**24%**). Maximum number of dependents covered is five (**1%**).
+
+
+## Correlations
+
+```{r}
+new_df <- df
+new_df$sex <- ifelse(new_df$sex=="female", 0, 1)
+new_df$smoker <- ifelse(new_df$smoker=="yes", 1, 0)
+new_df$children <- as.numeric(new_df$children)
+```
+
+
+```{r}
+new_df <- new_df[,-6]
+res <- cor(new_df)
+round(res, 2)
+
+
+corrplot(res, type = "upper", order = "hclust", 
+         tl.col = "black", tl.srt = 45)
+```
+
+There is not a strong correlation between variables overall. A strong correlation is found between **Smoker** and **Charges**. Even **Charges** and **Age** semes sto be **Weakly Correlated**.
+
+## Age Distribution
+
+Let's check for normality of **Age Variable** with a **Shapiro-Wilk Test for Normality**. This is a powerful Test for Normality, in particular for small samples. 
+
+* Null Hypothesis in this case is that the Distribution is Normal
+
+```{r}
+shapiro.test(df$age)
+```
+
+With a **p-value** smaller than **alpha=0.05** we reject this hypothesis and assume that the variable is not normally distributed.
+
+Check for Age Distribution.
+
+```{r}
+# Age distribution
+age_hist <- df %>%
+    ggplot(aes(x=age))+
+    geom_histogram(
+        binwidth = 5,
+        show.legend = FALSE,
+        fill="#ff5733"
+    )+
+    labs(
+        x = "Ages of policyholders",
+        y = "Number of policyholders",
+        title = "Distribution of ages"
+    )+
+    # resize text
+    theme(
+        plot.title = element_text(size=8),
+        axis.text = element_text(size=7),
+        axis.title = element_text(size=7)
+    )
+
+age_dens <- df %>%
+    ggplot(aes(x=age)) +
+     geom_density(
+        alpha=.3,
+        fill="#ff5733"
+    )+
+    labs(
+        x = "Ages of policyholders",
+        y = "Probability density",
+        title = "Distribution of ages"
+    )+
+    # resize text
+    theme(
+        plot.title = element_text(size=8),
+        axis.text = element_text(size=7),
+        axis.title = element_text(size=7)
+    )
+
+age_box <- df %>%
+    ggplot(aes(y=age)) +
+    geom_boxplot(
+        alpha=.5,
+        fill="#ff5733"
+    )+
+    coord_flip() +
+    theme(
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank()
+    )+
+    labs(
+        y = "Ages of policyholders",
+        x = "",
+        title = "Distribution of ages"
+    )+
+    # resize text
+    theme(
+        plot.title = element_text(size=8),
+        axis.text = element_text(size=7),
+        axis.title = element_text(size=7)
+    )
+
+cowplot::plot_grid(
+    age_hist, age_dens, age_box,
+    labels="AUTO",
+    ncol = 3,
+    nrow = 1
+    )
+```
+
+
+### Findings
+
+Youngest policyholder is **18** and the eldest is **64**. All ages in the range are represented fairly equally apart from the youngest and eldest policyholders. **18-23 year olds** are the most populous group (among all 5-year segments) and **60-64 year olds** are the least represented 5-year age group. There are no outliers.
+
+## BMI Distribution
+
+Check for **Body Mass Index** Distribution.
+
+```{r}
+# BMI distribution
+bmi_hist <- df %>%
+    ggplot(aes(x=bmi))+
+    geom_histogram(
+        binwidth = 4,
+        show.legend = FALSE,
+        fill = "#55ab11"
+    )+
+    labs(
+        x = "BMI scores of policyholders",
+        y = "Number of policyholders",
+        title = "Distribution of BMI scores"
+    )+
+    # resize text
+    theme(
+        plot.title = element_text(size=8),
+        axis.text = element_text(size=7),
+        axis.title = element_text(size=7)
+    )
+
+bmi_dens <- df %>%
+    ggplot(aes(x=bmi)) +
+     geom_density(
+        alpha=.3,
+        fill="#55ab11"
+    )+
+    labs(
+        x = "BMI scores of policyholders",
+        y = "Probability density",
+        title = "Distribution of BMI scores"
+    )+
+    # resize text
+    theme(
+        plot.title = element_text(size=8),
+        axis.text = element_text(size=7),
+        axis.title = element_text(size=7)
+    )
+
+bmi_box <- df %>%
+    ggplot(aes(y=bmi)) +
+    geom_boxplot(
+        alpha=.5,
+        fill="#55ab11"
+    )+
+    coord_flip() +
+    theme(
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank()
+    )+
+    labs(
+        y = "BMI scores of policyholders",
+        x = "",
+        title = "Distribution of BMI scores"
+    )+
+    # resize text
+    theme(
+        plot.title = element_text(size=8),
+        axis.text = element_text(size=7),
+        axis.title = element_text(size=7)
+    )
+
+cowplot::plot_grid(
+    bmi_hist, bmi_dens, bmi_box,
+    labels="AUTO",
+    ncol = 3,
+    nrow = 1
+    )
+
+
+```
+
+This seems to be Normally Distributed. Let's check with a **Shapiro-Wilk Test**:
+
+```{r}
+shapiro.test(df$bmi)
+```
+
+### Findings
+
+BMI is not normally distributed even if **Median and Mean** being almost identical. There are a few outliers on the larger side. Minimum recorded **BMI score** is **16** and Maximum is **53.1**.
+
+## Charges Distribution
+
+Check for **Charges** Distribution.
+
+```{r}
+# Charges distribution
+charges_hist <- df %>%
+    ggplot(aes(x=charges)) +
+    geom_histogram(
+        binwidth = 2000,
+        show.legend = FALSE,
+        fill = "#FFC300"
+    )+
+    labs(
+        x = "Charges to policyholders ($)",
+        y = "Number of policyholders",
+        title = "Distribution of medical charges"
+    )+
+    # resize text
+    theme(
+        plot.title = element_text(size=8),
+        axis.text = element_text(size=7),
+        axis.title = element_text(size=7)
+    )
+
+charges_dens <- df %>%
+    ggplot(
+        aes(x=charges)
+    ) +
+     geom_density(
+        alpha=.3,
+        fill="#FFC300"
+    ) +
+    labs(
+        x = "Charges to policyholders ($)",
+        y = "Probability density",
+        title = "Distribution of medical charges"
+    ) +
+    # resize text
+    theme(
+        plot.title = element_text(size=8),
+        axis.text = element_text(size=7),
+        axis.title = element_text(size=7)
+    )
+
+charges_box <- df %>%
+    ggplot(aes(y=charges))+
+    geom_boxplot(
+        alpha=.5,
+        fill="#FFC300"
+    )+
+    coord_flip()+
+    # remove ticks from y-axis
+    theme(
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank()
+    )+
+    labs(
+        y = "Charges to policyholders ($)",
+        x = "",
+        title = "Distribution of medical charges"
+    )+
+    # resize text
+    theme(
+        plot.title = element_text(size=8),
+        axis.text = element_text(size=7),
+        axis.title = element_text(size=7)
+    )
+
+cowplot::plot_grid(
+    charges_hist, charges_dens, charges_box,
+    labels="AUTO",
+    ncol = 3,
+    nrow = 1
+    )
+
+```
+
+### Skewness and Kurtosis
+
+### Findings
+
+Charges are **Heavily Right-Skewed** with many outliers on the larger side. This means most charges are fairly low with a few particularly high charges. Smallest charge is **$1,122** and largest charge is **$63,770**.
+
+## Find Patterns
+
+Check for Patterns in the structure of Data.
+
+```{r}
+age_scatter <- df %>%
+    ggplot(aes(x=age, y=charges)) +
+    geom_point()+
+    # add a linear regression line
+    geom_smooth(method='lm')+
+    labs(
+        x = "Ages of policyholders",
+        y = "Charges to policyholders ($)",
+        title = "Medical Charges vs Policyholder Age"
+    )+
+    # resize text
+    theme(
+        plot.title = element_text(size=9),
+        axis.text = element_text(size=7),
+        axis.title = element_text(size=7)
+    )
+
+bmi_scatter <- df %>%
+    ggplot(aes(x=bmi, y=charges)) +
+    geom_point()+
+    # add a linear regression line
+    geom_smooth(method='lm')+
+    labs(
+        x = "BMI scores of policyholders",
+        y = "Charges to policyholders ($)",
+        title = "Medical Charges vs Policyholder BMI"
+    )+
+    # resize text
+    theme(
+        plot.title = element_text(size=9),
+        axis.text = element_text(size=7),
+        axis.title = element_text(size=7)
+    )
+
+cowplot::plot_grid(
+  age_scatter, bmi_scatter,
+  labels="AUTO",
+  ncol = 2,
+  nrow = 1
+    )
+
+options(figsize)
+```
+
+
+* **Medical Charges vs Policyholder Age:** There are interesting patterns here, showing three groups. The lower band shows a very **Strong Relationship** between **Medical Charges** and **Age**, with two other bands showing a less strong relationship. The general trend is a **Positive Correlation**, meaning as age increases, so do medical expenses.
+  
+* **Medical Charges vs Policyholder BMI:** There is a **Positive Relationship** between **BMI** and **Medical Expenses**, meaning people with higher BMI scores have higher medical bills. The relationship is not, however, very strong. There are possibly two groups to the scatter plot, judging by the spread of points above and below the regression line.
+
+
+## Relationships By Gender
+
+Check in deep for Relationships by **Gender**, grouped by color (Red=**Female**, Blue=**Male**).
+
+```{r}
+# by sex
+age_scatter_sex <- df %>%
+    ggplot(aes(x=age, y=charges, color=sex)) +
+    geom_point()+
+    labs(
+        x = "Ages of policyholders",
+        y = "Charges to policyholders ($)",
+        title = "Medical Charges vs Policyholder Age by Sex",
+        color = "Sex:"
+    )+
+    scale_color_hue(labels = c("male" = "Male", "female" = "Female"))+
+    guides(fill=FALSE)+
+    # resize text
+    theme(
+        plot.title = element_text(size=9),
+        axis.text = element_text(size=7),
+        axis.title = element_text(size=7)
+    )
+
+bmi_scatter_sex <- df %>%
+    ggplot(aes(x=bmi, y=charges, color=sex)) +
+    geom_point()+
+    labs(
+        x = "BMI scores of policyholders",
+        y = "Charges to policyholders ($)",
+        title = "Medical Charges vs Policyholder BMI by Sex",
+        color = "Sex:"
+    )+
+    scale_color_hue(labels = c("male" = "Male", "female" = "Female"))+
+    guides(fill=FALSE)+
+    # resize text
+    theme(
+        plot.title = element_text(size=9),
+        axis.text = element_text(size=7),
+        axis.title = element_text(size=7)
+    )
+
+cowplot::plot_grid(
+    age_scatter_sex, bmi_scatter_sex,
+    labels="AUTO",
+    ncol = 2,
+    nrow = 1
+    )
+
+```
+
+Percentage of **Female** and **Male** genders seems to be **homogeneus**.
+
+## Relationships between Charges and Children
+
+
+
+## Relationships By Smoker Status
+
+```{r}
+#by smoker
+age_scatter_smoker <- df %>%
+    ggplot(aes(x=age, y=charges, color=smoker)) +
+    geom_point()+
+    labs(
+        x = "Ages of policyholders",
+        y = "Charges to policyholders ($)",
+        title = "Medical Charges vs Policyholder Age by Smoking",
+        color = "Smoker:"
+    )+
+    scale_color_hue(labels = c("no" = "Non-smoker", "yes" = "Smoker"))+
+    guides(fill=FALSE)+
+    # resize text
+    theme(
+        plot.title = element_text(size=9),
+        axis.text = element_text(size=7),
+        axis.title = element_text(size=7)
+    )
+
+bmi_scatter_smoker <- df %>%
+    ggplot(aes(x=bmi, y=charges, color=smoker)) +
+    geom_point()+
+    labs(
+        x = "BMI scores of policyholders",
+        y = "Charges to policyholders ($)",
+        title = "Medical Charges vs Policyholder BMI by Smoking",
+        color = "Smoking:"
+    )+
+    scale_color_hue(labels = c("no" = "Non-smoker", "yes" = "Smoker"))+
+    guides(fill=FALSE)+
+    # resize text
+    theme(
+        plot.title = element_text(size=9),
+        axis.text = element_text(size=7),
+        axis.title = element_text(size=7)
+    )
+
+cowplot::plot_grid(
+    age_scatter_smoker, bmi_scatter_smoker,
+    labels="AUTO",
+    ncol = 2,
+    nrow = 1
+    )
+
+```
+
+Instead, a very clear pattern emerges looking at **Smokers Plots**. There are groups in these two scatter plots, according to the smoking status of the policyholder. The ones with **Higher Medical Charges** are the **Smokers**, while the group of **Lower Medical Charges** is made of **Non-Smokers**.
+
+# Hypothesis Testing
+
+## Testing on Smokers Groups
+
+**Exploratory Data Analysis** has indicated that smoking has an effect on charges.
+
+```{r}
+df %>%
+    group_by(smoker) %>%
+      summarise(
+        count = n(),
+        min = min(charges),
+        median = median(charges),
+        max = max(charges),
+        IQR = IQR(charges)
+      ) %>%
+    arrange(desc(median)) # sort by median in descending order
+```
+
+Clearly visible also from this table. There are differences in **Min**, **Median** and **Max**.
+
+### 2-group Mann-Whitney U Test
+
+An independent *2-group Mann-Whitney U Test* was performed to determine if this **difference is statistically significant**.
+
+Assumptions of the test are as follows:
+
+* Dependent variable is **Continuous**.
+* Two independent **Categorical Variables** are present.
+* There is **No Relationship** between the observations in each group of the independent variables or between the groups themselves.
+* The **Shape of Distributions** of the independent variables must be known.
+
+Since the distributions of charges grouped by sex are different, the test is used to determine whether there are differences in the distributions of the two groups. All of these assumptions are met.
+
+```{r}
+wilcox.test(df$charges ~ df$smoker)
+```
+
+* **H0:** There is no difference in the distribution scores.
+* **HA:** There is a difference in the distribution scores.
+
+The test indicated that there is a **Significant Difference** between the groups, **W = 7403, p < 0.001**. The **Null Hypothesis** is **Rejected**.
+
+## Testing on Region Groups
+
+Check for differences in Medical Charges between **Region**.
+
+```{r}
+df %>%
+    group_by(region) %>%
+      summarise(
+        count = n(),
+        min = min(charges),
+        median = median(charges),
+        max = max(charges),
+        IQR = IQR(charges)
+      )
+```
+
+There was also some difference in medical charges between regions.
+
+###  Kruskal-Wallis Test
+
+North East sees the largest charges **$10058**, followed by South East **$9294**, then by North West **$8966**, with South West **$8799** sees the smallest charges. 
+
+**Kruskal-Wallis Test** was performed to determine if these differences are significant. 
+
+Assumptions of the test are as follows:
+
+* **Dependent Variable** is continuous.
+* Two Independent **Categorical Variables** are present.
+* There is **No Relationship** between the observations in each group of the independent variables or between the groups themselves. 
+
+All assumptions are met.
+
+```{r}
+kruskal.test(charges ~ region, data = df)
+```
+
+
+* **H0:** There is no difference between the medians.
+* **HA:** There is a difference between the medians.
+
+The test showed that the difference between the median medical charges in different regions is **Not Significant** with an high p-value, **p = 0.19**. 
+A significant level of 0.19 indicates a **19% Risk** of concluding that a difference exists when there is no actual difference. 
+
+The null hypothesis is **Accepted**.
+
+## Testing on Children Groups
+
+Check for differences in **Medical Charges** between **Children Groups**.
+
+```{r}
+df %>%
+    group_by(children) %>%
+      summarise(
+        count = n(),
+        min = min(charges),
+        mean = mean(charges),
+        max = max(charges),
+        IQR = IQR(charges)
+      ) 
+```
+
+It seems to be some differences in means for Medical Charges between these five groups.
+
+```{r}
+charges_box_dff <- df %>%
+    ggplot(aes(x=children, y=charges))+
+    geom_boxplot(
+        alpha=.5,
+        fill="#FFC300"
+    )+
+    coord_flip()+
+    labs(
+        y = "Charges to policyholders ($)",
+        x = "Number of Children",
+        title = "Distribution of Medical Charges between Children Dependents"
+    )+
+    # resize text
+    theme(
+        plot.title = element_text(size=12),
+        axis.text = element_text(size=7),
+        axis.title = element_text(size=7)
+    )
+
+charges_box_dff
+```
+
+There are a lot of **Outliers** in "0", "1", "2" and "3" groups, the **mean** could be affected while the **median** is not sensitive to them.
+
+### Analysis of Variance (ANOVA)
+
+For a comparison of **more than Two Group Means** the One-Way **Analysis of Variance** (ANOVA) is the appropriate method instead of the **t Test**.
+
+```{r}
+qqnorm(df$charges, pch = 1, frame = FALSE)
+qqline(df$charges, col = "red", lwd = 2)
+```
+
+
+In order to proceed with ANOVA, the variables must be **Normally Distributed**. Before we denoted the Non-Normality of these variables, so we proceeded with a **Normalization of Data** in order to make them suitable for **ANOVA**.
+
+* **Log-Transformation**
+
+```{r}
+norm_charges = log(df$charges)
+qqnorm(norm_charges, pch = 1, frame = FALSE)
+qqline(norm_charges, col = "green", lwd = 2)
+```
+
+
+In base R form, it produces an **ANOVA** table which includes an **F-test**. This so-called omnibus test tells you whether there are any differences in the comparison of means of the included groups.
+
+```{r}
+fit = aov(norm_charges ~ df$children) 
+summary(fit)
+```
+
+
+```{r}
+library(broom)
+aov(norm_charges ~ df$children, data = df) %>% 
+tidy()
+```
+
+With a small **p-value** of over a **Significance Level** of **0.001** the Hypothesis of No Difference between groups is **Rejected**. Meaning differences between other groups found to be **Significant**.
+
+# Linear Regression
+
+Linear regression analysis is used to predict the value of a  **Response Variable** based on the value of an **Indipendent Variable**.
+
+This form of analysis **estimates the coefficients** of the linear equation, involving one or more independent variables that best predict the value of the **Dependent Variable**. Linear regression fits a straight line or surface that **minimizes** the discrepancies between predicted and actual output values. There are simple linear regression calculators that use a **Least Squares** method to discover the **best-fit line** for a set of paired data.
+
+Response variable (charges) is to be transformed to reduce **skewness** and meet the assumption of **normality**.
+
+```{r}
+charges_hist <- df %>%
+    ggplot(
+        aes(x=charges)
+        ) +
+    geom_histogram(
+        binwidth = 2000,
+        show.legend = FALSE,
+        fill = "#FFC300"
+        )+
+    labs(
+        x = "Charges to policyholders ($)",
+        y = "Number of policyholders",
+        title = "Distribution of medical charges"
+        )+
+    # resize text
+    theme(
+        plot.title = element_text(size=8),
+        axis.text = element_text(size=7),
+        axis.title = element_text(size=7)
+    )
+
+charges_hist_log10 <- df %>%
+    ggplot(
+        aes(x=log10(charges))
+        ) +
+    geom_histogram(
+        show.legend = FALSE,
+        fill = "#FFC300"
+        )+
+    labs(
+        x = "Charges to policyholders log10 transformed",
+        y = "Number of policyholders",
+        title = "Distribution of medical charges after Log-Transformation"
+        )+
+    # resize text
+    theme(
+        plot.title = element_text(size=8),
+        axis.text = element_text(size=7),
+        axis.title = element_text(size=7)
+    )
+
+cowplot::plot_grid(
+    charges_hist, charges_hist_log10,
+    labels="AUTO",
+    ncol = 2,
+    nrow = 1
+    )
+```
+
+```{r}
+df$logCharges<- log10(df$charges)
+```
+
+```{r}
+model <- lm(logCharges ~ smoker, data = df)
+
+summary(model)
+```
+
+The group of **Effective Smokers** is really significant for the **Linear Regression Model**.
+
+The model explains **44.2%** of total variance in the sample. 
+
+## Goodness of Fit R2
+
+# Partial Correlation
+
+Even **Age** is correlated with **Charges** variable, so let's check for partial correlation finding residuals for **Charges-Age Linear Regression Model**.
+
+```{r}
+model2 <- lm(logCharges ~ age, data = df)
+
+summary(model2)
+```
+
+The model explains **27,8%** of total variance in the sample. 
+
+### Residuals for First Model
+
+```{r}
+res1 <- model$residuals
+head(res1)
+```
+
+
+### Residuals for Second Model
+
+```{r}
+res2 <- model2$residuals
+head(res2)
+```
+
+## Correlation between Residuals
+
+By computing the correlation between **Residuals of First Model** and **Residuals of Second Model** we obtain the **Partial Correlation**.
+
+```{r}
+cor(res1, res2)
+```
+
+The most the value is closer to **0**, the more there is no **Important Relationship** between the **Two Models**.
+
+# Conclusions
+
+In the end
+
